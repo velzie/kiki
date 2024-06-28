@@ -3,7 +3,6 @@
 
 # this *isn't* a daemon - every request spawns a new instance so set -e is okay
 # a bad response can fuck up federation permanently if you get unlucky - better not to respond
-set -e
 
 
 . ./util.sh
@@ -129,16 +128,11 @@ nodeinfo21() {
 
 }
 
-user() {
+actorjson() {
   uid=$1
-  echo "User: $uid"
   . "$DB_USERS/$uid/info"
 
-
-  httpd_clear
-  httpd_header "Content-Type" "application/activity+json"
-  httpd_json 200\
-    %@context "$(<context.json)"\
+  json\
     .type Person\
     .id "$DOMAINURL/users/$uid"\
     .inbox "$DOMAINURL/inbox/$uid"\
@@ -176,13 +170,49 @@ user() {
       .id "$DOMAINURL/users/$uid#main-key"\
       .type Key\
       .owner "$DOMAINURL/users/$uid"\
-      .publicKeyPem "$(echo -en "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr9Uyle4vSD4pVrQMpfRZ\n/apjEdwCBBvi1XZWTInOpxlQDBVggqsnM+4DVoA8QOGcb28QNTn/pSk/zbtlSlbN\nkAGrH13mYOhk/TAGID228Z+kU0BooI8wKjf6s5HTgxABjHAUIO9FxEkl6AQLSPDl\nHjO5x2rq/RBaCwhLpDivLydqmZ2f+G7i4gMbH5hYeuob8LvIJYKvc6hQ0VU0HxgM\np5yDGUA2fpjgwVk5fdAElFIB64tdW76/hCCUdwzJ/8rzXvbCwLVeb3Y63igi0dN5\nEzac4yNogkJmfA3l45SnsoRw1LGnT4e8b0jio3qAD45tyOehLfoMsNAe8rapLUCW\nJwIDAQAB\n-----END PUBLIC KEY-----\n")"\
+      .publicKeyPem "$(< "$DB_USERS/$uid/pubkey.pem")"\
     %isCat true\
     %noindex true\
     %speakAsCat false\
     @attachment 0\
     @alsoKnownAs 0
+}
 
+user() {
+  uid=$1
+  echo "User: $uid"
+  . "$DB_USERS/$uid/info"
+
+
+  httpd_clear
+  httpd_header "Content-Type" "application/activity+json"
+
+  actor=$(actorjson "$uid")
+
+  # add ./context.json to actor
+  actor=$(echosafe "$actor" | jq '.["@context"] = $context' --argjson context "$(< ./context.json)")
+
+  httpd_send 200 "$actor"
+}
+
+outbox() {
+  uid=$1
+  echo "Outbox: $uid"
+  . "$DB_USERS/$uid/info"
+
+  numactivities=$(find "$DB_USERS/$uid/activities" -type f | wc -l)
+
+  httpd_clear
+  httpd_header "Content-Type" "application/activity+json"
+  httpd_json 200\
+    %@context "$(< ./context.json)"\
+    .id "$DOMAINURL/outbox/$uid"\
+    .type OrderedCollection\
+    %totalItems $numactivities\
+    .first "$DOMAINURL/outbox/$uid?page=true"\
+    .last "$DOMAINURL/outbox/$uid?page=true?since_id=0"\
+
+    
 }
 
 httpd_request() {
@@ -192,9 +222,9 @@ httpd_request() {
     echo "Search: $key ${G_search[$key]}"
   done
 
-  # for key in "${!G_headers[@]}"; do
-  #   echo "$key: ${G_headers[$key]}"
-  # done
+  for key in "${!G_headers[@]}"; do
+    echo "$key: ${G_headers[$key]}"
+  done
 
   if [ "$1" = "GET" ]; then
     if [[ "$2" = "/.well-known/webfinger"* ]]; then
@@ -214,12 +244,35 @@ httpd_request() {
       user "$uid"
     fi
 
+    if [[ "$2" = "/notes/"* ]]; then
+      id=${2#*notes/}
+      httpd_clear
+      httpd_header "Content-Type" "application/activity+json"
+      httpd_json 200\
+        %@context "$(< ./context.json)"\
+        .id "$DOMAINURL/notes/$id"\
+        .type "Note"\
+        .attributedTo "$DOMAINURL/users/shuid"\
+        .content "i love bash"\
+        .published "2024-01-01T00:00:00Z"\
+        @to 1\
+          . "https://www.w3.org/ns/activitystreams#Public"\
+        @cc 1\
+          . "$DOMAINURL/followers/$uid"\
+        %inReplyTo null\
+        @attachment 0\
+        %sensitive false\
+        @tag 0
+    fi
+
     if [[ "$2" = "/banner/"* ]]; then
       uid=${2#*banner/}
 
+      echo uid: $uid
+
       httpd_clear
       httpd_header "Content-Type" "image/png"
-      httpd_sendfile "$DB_USERS/$uid/banner.png"
+      httpd_sendfile 200 "$DB_USERS/$uid/banner.png"
     fi
 
     if [[ "$2" = "/pfp/"* ]]; then
@@ -227,7 +280,7 @@ httpd_request() {
 
       httpd_clear
       httpd_header "Content-Type" "image/png"
-      httpd_sendfile "$DB_USERS/$uid/pfp.png"
+      httpd_sendfile 200 "$DB_USERS/$uid/pfp.png"
     fi
 
 

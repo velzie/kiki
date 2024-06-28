@@ -24,9 +24,7 @@ httpd_listen() {
   path=${request[1]}
 
 
-  if [[ "$path" == *?* ]]; then
-    echo "Path: $path"
-
+  if [[ "$path" == *"?"* ]]; then
     path=${path%%\?*}
     query=${request[1]#*\?}
 
@@ -83,5 +81,14 @@ httpd_sendfile() {
   status=$1
   file=$2
 
-  httpd_send "$status" "$(< "$file")"
+  {
+    echo -en "HTTP/1.1 $status OK\r\n"
+    echo -en "Content-Length: $(stat -c %s "$file")\r\n"
+    echo -en "Content-Type: $(file -b --mime-type "$file")\r\n"
+    for key in "${!G_headers[@]}"; do
+      echo -en "$key: ${G_headers[$key]}\r\n"
+    done
+    echo -en "\r\n"
+    cat "$file"
+  } >&3
 }
