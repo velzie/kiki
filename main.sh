@@ -63,7 +63,7 @@ nodeinfo() {
   httpd_clear
   httpd_header "Content-Type" "application/json"
   httpd_json 200\
-    @links 2
+    @links 2\
       ! 2\
         .rel "http://nodeinfo.diaspora.software/ns/schema/2.1"\
         .href "$DOMAINURL/nodeinfo/2.1"\
@@ -222,9 +222,10 @@ httpd_request() {
     echo "Search: $key ${G_search[$key]}"
   done
 
-  for key in "${!G_headers[@]}"; do
-    echo "$key: ${G_headers[$key]}"
-  done
+  # for key in "${!G_headers[@]}"; do
+  #   echo "$key: ${G_headers[$key]}"
+  # done
+  echo "UA: ${G_headers[User-Agent]}"
 
   if [ "$1" = "GET" ]; then
     if [[ "$2" = "/.well-known/webfinger"* ]]; then
@@ -233,6 +234,55 @@ httpd_request() {
 
     if [[ "$2" = "/.well-known/nodeinfo" ]]; then
       nodeinfo
+    fi
+
+    if [[ "$2" = "/.well-known/host-meta" ]]; then
+      httpd_clear
+      httpd_header "Content-Type" "application/xrd+xml"
+      httpd_send 200\
+        "$(cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
+  <Link rel="lrdd" type="application/xrd+xml" template="$DOMAINURL/.well-known/webfinger?resource={uri}"/>
+</XRD>
+EOF
+)"
+    fi
+    if [[ "$2" = "/.well-known/host-meta.json" ]]; then
+      httpd_clear
+      httpd_header "Content-Type" "application/json"
+      httpd_json 200\
+        @links 1\
+          ! 3\
+            .rel "lrdd"\
+            .type "application/json"\
+            .template "$DOMAINURL/.well-known/webfinger?resource={uri}"
+    fi
+
+    if [[ "$2" = "/manifest.json" ]]; then
+      httpd_clear
+      httpd_header "Content-Type" "application/json"
+      httpd_json 200\
+        .short_name "$NODENAME"\
+        .name "$NODENAME"\
+        .start_url "/"\
+        .display "standalone"\
+        .description "$NODEDESCRIPTION"\
+        .background_color "#00ae00"\
+        .theme_color "#00ae00"\
+        .icons 1\
+          ! 3\
+            .src "$DOMAINURL/instanceicon"\
+            .sizes "512x512"\
+            .type "image/png"\
+        !share_target 4\
+          .action "/share/"\
+          .method "GET"\
+          .enctype "application/x-www-form-urlencoded"\
+          !params 3\
+            .title "title"\
+            .text "text"\
+            .url "url"
     fi
     
     if [[ "$2" = "/nodeinfo/"* ]]; then
@@ -283,7 +333,6 @@ httpd_request() {
       httpd_sendfile 200 "$DB_USERS/$uid/pfp.png"
     fi
 
-
     if [[ "$2" = "/@"* ]]; then
       username=${2#*@}
       echo username: $username
@@ -291,8 +340,31 @@ httpd_request() {
 
       user "$uid"
     fi
-  fi
+  elif [[ "$1" = "POST" ]]; then
+    if [[ "$2" = "/sharedinbox" ]]; then
+      json=$(httpd_read)
+      type=$(jq -r '.type' <<< "$json")
 
+      echo "SHARED INBOX REQUEST TYPE: $type"
+      echo "$json"
+
+      httpd_clear
+      httpd_send 200
+    fi
+
+    if [[ "$2" = "/inbox/"* ]]; then
+      uid=${2#*inbox/}
+
+      json=$(httpd_read)
+      type=$(jq -r '.type' <<< "$json")
+
+      echo "INBOX REQUEST: $uid/$type"
+
+      httpd_clear
+      httpd_send 200
+
+    fi
+  fi
 
   echo
 }

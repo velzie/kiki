@@ -92,3 +92,9 @@ httpd_sendfile() {
     cat "$file"
   } >&3
 }
+
+
+httpd_read() {
+  length=${G_headers[Content-Length]}
+  head -c "$length"
+}
