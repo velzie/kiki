@@ -1,7 +1,12 @@
 #!/bin/bash
 
-. ./main.sh
+. ./lib/main.sh
 
+
+db_init() {
+  mkdir -p "$DB_USERS"
+  mkdir -p "$DB_OBJECTS"
+}
 
 useradd() {
   read -r -p "Username: " username
@@ -23,7 +28,23 @@ setUid=$uid
 setName=$name
 setSummary='$summary'
 EOF
+
+  :>"$dir/followers"
+  :>"$dir/following"
 }
 
 
-$1
+follow() {
+  uid=$1
+  actor=$2
+
+  http_post_json_signed "$actor/inbox" "$uid"\
+    %context "$(< ./context.json)"\
+    .id "$DOMAINURL/follows/gyat"\
+    .type Follow\
+    .actor "$DOMAINURL/users/$uid"\
+    .object "$actor"
+}
+
+
+$@

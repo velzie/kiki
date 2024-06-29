@@ -54,7 +54,6 @@ httpd_handle() {
 
   echo "${request[@]}"
   echo "${G_headers[user-agent]}"
-  echo "${G_headers[signature]}"
   echo "--------"
   for key in "${!G_search[@]}"; do
     echo "Search: $key ${G_search[$key]}"

@@ -4,17 +4,22 @@
 # a bad response can fuck up federation permanently if you get unlucky - better not to respond
 
 
-. ./util.sh
+. ./lib/util.sh
+. ./lib/json.sh
 
-. ./httpd.sh
-
-. ./json.sh
+. ./lib/httpd.sh
+. ./lib/http.sh
 
 
 DOMAIN=kiki.velzie.rip
-VERSION=2024.0.0
+VERSION=2024.0.1
 NODENAME=kiki.sh
 NODEDESCRIPTION="fedi server written in bash. why did i do this"
+
+INSTANCEACTOR=shuid
+
+MAINTAINERNAME=velzie
+MAINTAINEREMAIL=velzie@velzie.rip
 
 DOMAINURL=https://$DOMAIN
 
@@ -22,6 +27,7 @@ DOMAINURL=https://$DOMAIN
 
 DB=./db
 DB_USERS=$DB/users
+DB_OBJECTS=$DB/objects
 
 start() {
   httpd_init
@@ -73,23 +79,51 @@ req_note(){
     @to 1\
       . "https://www.w3.org/ns/activitystreams#Public"\
     @cc 1\
-      . "$DOMAINURL/followers/$uid"\
+      . "$DOMAINURL/followers/shuid"\
     %inReplyTo null\
     @attachment 0\
     %sensitive false\
     @tag 0
 }
 
+uuid(){
+  tr -dc 'a-f0-9' < /dev/urandom | head -c 8
+}
+
+add_object() {
+  object=$1
+  ourid=$(uuid)
+  mkdir -p "$DB_OBJECTS/$ourid"
+
+  type=$(jq -r '.type' <<< "$object")
+
+  echosafe "$type" > "$DB_OBJECTS/$ourid/type"
+  echosafe "$object" > "$DB_OBJECTS/$ourid/object.json"
+}
+
 req_ap_inbox() {
   json=$(httpd_read)
   type=$(jq -r '.type' <<< "$json")
 
-  echo "SHARED INBOX REQUEST TYPE: $type"
-  echo "$json"
+  if [[ "$type" = "Create" ]]; then
+    add_object "$(jq -r '.object' <<< "$json")"
+  elif [[ "$type" = "Delete" ]]; then
+    # don't care. spams the logs
+    :
+  else
+    echo "UNKNOWN ACTIVITY: $type"
+    echo "$json"
+  fi
 
 
   httpd_clear
   httpd_send 200
+}
+
+actorlookup(){
+  actorurl=$1
+
+  http_get_signed "$actorurl"
 }
 
 req_user_inbox() {
@@ -98,7 +132,30 @@ req_user_inbox() {
   json=$(httpd_read)
   type=$(jq -r '.type' <<< "$json")
 
-  echo "INBOX REQUEST: $uid/$type"
+  if [[ "$type" = "Follow" ]]; then
+    followid=$(jq -r '.id' <<< "$json")
+    actor=$(jq -r '.actor' <<< "$json")
+    object=$(jq -r '.object' <<< "$json")
+    # actor is the remote actor, object is our actor
+
+    uid=${object#*users/}
+
+    if ! userlookup "$uid"; then
+      httpd_clear
+      httpd_send 404 "no such user!"
+      return
+    fi
+
+    echo "FOLLOW REQUEST: $actor -> $object"
+
+    actorlookup "$actor"
+      
+  elif [[ "$type" = "Accept" ]]; then
+    :
+  else
+    echo "UNKNOWN USER ACTIVITY: $type"
+    echo "$json"
+  fi
 
 
   httpd_clear
@@ -271,7 +328,12 @@ req_disaspora_nodeinfo() {
 
 actorjson() {
   uid=$1
-  . "$DB_USERS/$uid/info"
+
+  if ! userlookup "$uid"; then
+    httpd_clear
+    httpd_send 404 "no such user!"
+    return
+  fi
 
   json\
     .type Person\
@@ -307,11 +369,10 @@ actorjson() {
     @tag 0\
     %manuallyApprovesFollowers false\
     %discoverable true\
-    !publicKey 4\
+    !publicKey 3\
       .id "$DOMAINURL/users/$uid#main-key"\
-      .type Key\
       .owner "$DOMAINURL/users/$uid"\
-      .publicKeyPem "$(< "$DB_USERS/$uid/pubkey.pem")"\
+      .publicKeyPem "$(< "$DB_USERS/$uid/pubkey.pem")"$'\n'\
     %isCat true\
     %noindex true\
     %speakAsCat false\
@@ -322,7 +383,12 @@ actorjson() {
 senduserinfo() {
   uid=$1
   echo "User: $uid"
-  . "$DB_USERS/$uid/info"
+
+  if ! userlookup "$uid"; then
+    httpd_clear
+    httpd_send 404 "no such user!"
+    return
+  fi
 
 
   httpd_clear
@@ -339,7 +405,13 @@ senduserinfo() {
 outbox() {
   uid=$1
   echo "Outbox: $uid"
-  . "$DB_USERS/$uid/info"
+
+
+  if ! userlookup "$uid"; then
+    httpd_clear
+    httpd_send 404 "no such user!"
+    return
+  fi
 
   numactivities=$(find "$DB_USERS/$uid/activities" -type f | wc -l)
 
@@ -365,4 +437,14 @@ finduser() {
       return
     fi
   done
+}
+
+userlookup() {
+  uid=$1
+  if [ -f "$DB_USERS/$uid/info" ]; then
+    source "$DB_USERS/$uid/info"
+    return 0
+  else
+    return 1
+  fi
 }
