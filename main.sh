@@ -1,7 +1,6 @@
 #shellcheck shell=bash
 
-
-# this *isn't* a daemon - every request spawns a new instance so set -e is okay
+# this *isn't* a daemon - every request spawns a new instance
 # a bad response can fuck up federation permanently if you get unlucky - better not to respond
 
 
@@ -24,13 +23,156 @@ DOMAINURL=https://$DOMAIN
 DB=./db
 DB_USERS=$DB/users
 
-
-
 start() {
-  httpd_listen
+  httpd_init
+
+  httpd_route GET / 'httpd_clear && httpd_sendfile 200 index.html'
+
+
+  # node meta
+  httpd_route GET /.well-known/webfinger req_webfinger
+  httpd_route GET /.well-known/nodeinfo req_nodeinfo
+  httpd_route GET /.well-known/host-meta req_hostmeta_xml
+  httpd_route GET /.well-known/host-meta.json req_hostmeta_json
+
+  httpd_route GET '/nodeinfo/*' req_disaspora_nodeinfo
+  httpd_route GET /manifest.json req_manifest
+
+  # ap routes
+  httpd_route POST '/sharedinbox' req_ap_inbox
+
+  # user routes
+  httpd_route GET '/users/*' 'senduserinfo "${path#*users/}"'
+  httpd_route GET '/@*' 'senduserinfo "$(finduser "${path#*@}" )"'
+  httpd_route GET '/banner/*' req_user_banner
+  httpd_route GET '/pfp/*' req_user_pfp
+
+  httpd_route POST '/inbox/*' req_user_inbox
+
+
+  # notes?
+  httpd_route GET '/notes/*' req_note
+
+
+  httpd_handle
 }
 
-webfinger() {
+req_note(){
+  id=${path#*notes/}
+
+
+  httpd_clear
+  httpd_header "Content-Type" "application/activity+json"
+  httpd_json 200\
+    %@context "$(< ./context.json)"\
+    .id "$DOMAINURL/notes/$id"\
+    .type "Note"\
+    .attributedTo "$DOMAINURL/users/shuid"\
+    .content "i love bash"\
+    .published "2024-01-01T00:00:00Z"\
+    @to 1\
+      . "https://www.w3.org/ns/activitystreams#Public"\
+    @cc 1\
+      . "$DOMAINURL/followers/$uid"\
+    %inReplyTo null\
+    @attachment 0\
+    %sensitive false\
+    @tag 0
+}
+
+req_ap_inbox() {
+  json=$(httpd_read)
+  type=$(jq -r '.type' <<< "$json")
+
+  echo "SHARED INBOX REQUEST TYPE: $type"
+  echo "$json"
+
+
+  httpd_clear
+  httpd_send 200
+}
+
+req_user_inbox() {
+  uid=${path#*inbox/}
+
+  json=$(httpd_read)
+  type=$(jq -r '.type' <<< "$json")
+
+  echo "INBOX REQUEST: $uid/$type"
+
+
+  httpd_clear
+  httpd_send 200
+}
+
+req_user_banner() {
+  uid=${path#*banner/}
+  echo "Banner: $uid"
+
+  httpd_clear
+  httpd_header "Content-Type" "image/png"
+  httpd_sendfile 200 "$DB_USERS/$uid/banner.png"
+}
+req_user_pfp() {
+  uid=${path#*pfp/}
+  echo "PFP: $uid"
+
+  httpd_clear
+  httpd_header "Content-Type" "image/png"
+  httpd_sendfile 200 "$DB_USERS/$uid/pfp.png"
+}
+
+req_manifest(){
+  httpd_clear
+  httpd_header "Content-Type" "application/json"
+  httpd_json 200\
+    .short_name "$NODENAME"\
+    .name "$NODENAME"\
+    .start_url "/"\
+    .display "standalone"\
+    .description "$NODEDESCRIPTION"\
+    .background_color "#00ae00"\
+    .theme_color "#00ae00"\
+    .icons 1\
+      ! 3\
+        .src "$DOMAINURL/instanceicon"\
+        .sizes "512x512"\
+        .type "image/png"\
+    !share_target 4\
+      .action "/share/"\
+      .method "GET"\
+      .enctype "application/x-www-form-urlencoded"\
+      !params 3\
+        .title "title"\
+        .text "text"\
+        .url "url"
+}
+
+req_hostmeta_xml(){
+  httpd_clear
+  httpd_header "Content-Type" "application/xrd+xml"
+  httpd_send 200\
+    "$(cat <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
+  <Link rel="lrdd" type="application/xrd+xml" template="$DOMAINURL/.well-known/webfinger?resource={uri}"/>
+</XRD>
+EOF
+)"
+}
+
+req_hostmeta_json() {
+  httpd_clear
+  httpd_header "Content-Type" "application/json"
+  httpd_json 200\
+    @links 1\
+      ! 3\
+        .rel "lrdd"\
+        .type "application/json"\
+        .template "$DOMAINURL/.well-known/webfinger?resource={uri}"
+}
+
+req_webfinger() {
   resource=${G_search[resource]}
   echo "Webfinger: $resource"
 
@@ -59,7 +201,7 @@ webfinger() {
 
 }
 
-nodeinfo() {
+req_nodeinfo() {
   httpd_clear
   httpd_header "Content-Type" "application/json"
   httpd_json 200\
@@ -73,8 +215,7 @@ nodeinfo() {
 
 }
 
-nodeinfo21() {
-  httpd_clear
+req_disaspora_nodeinfo() {
   httpd_header "Content-Type" "application/json"
   httpd_json 200\
     .version 2.1\
@@ -178,7 +319,7 @@ actorjson() {
     @alsoKnownAs 0
 }
 
-user() {
+senduserinfo() {
   uid=$1
   echo "User: $uid"
   . "$DB_USERS/$uid/info"
@@ -213,160 +354,6 @@ outbox() {
     .last "$DOMAINURL/outbox/$uid?page=true?since_id=0"\
 
     
-}
-
-httpd_request() {
-  echo "Request: $1 $2"
-
-  for key in "${!G_search[@]}"; do
-    echo "Search: $key ${G_search[$key]}"
-  done
-
-  # for key in "${!G_headers[@]}"; do
-  #   echo "$key: ${G_headers[$key]}"
-  # done
-  echo "UA: ${G_headers[User-Agent]}"
-
-  if [ "$1" = "GET" ]; then
-    if [[ "$2" = "/.well-known/webfinger"* ]]; then
-      webfinger
-    fi
-
-    if [[ "$2" = "/.well-known/nodeinfo" ]]; then
-      nodeinfo
-    fi
-
-    if [[ "$2" = "/.well-known/host-meta" ]]; then
-      httpd_clear
-      httpd_header "Content-Type" "application/xrd+xml"
-      httpd_send 200\
-        "$(cat <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">
-  <Link rel="lrdd" type="application/xrd+xml" template="$DOMAINURL/.well-known/webfinger?resource={uri}"/>
-</XRD>
-EOF
-)"
-    fi
-    if [[ "$2" = "/.well-known/host-meta.json" ]]; then
-      httpd_clear
-      httpd_header "Content-Type" "application/json"
-      httpd_json 200\
-        @links 1\
-          ! 3\
-            .rel "lrdd"\
-            .type "application/json"\
-            .template "$DOMAINURL/.well-known/webfinger?resource={uri}"
-    fi
-
-    if [[ "$2" = "/manifest.json" ]]; then
-      httpd_clear
-      httpd_header "Content-Type" "application/json"
-      httpd_json 200\
-        .short_name "$NODENAME"\
-        .name "$NODENAME"\
-        .start_url "/"\
-        .display "standalone"\
-        .description "$NODEDESCRIPTION"\
-        .background_color "#00ae00"\
-        .theme_color "#00ae00"\
-        .icons 1\
-          ! 3\
-            .src "$DOMAINURL/instanceicon"\
-            .sizes "512x512"\
-            .type "image/png"\
-        !share_target 4\
-          .action "/share/"\
-          .method "GET"\
-          .enctype "application/x-www-form-urlencoded"\
-          !params 3\
-            .title "title"\
-            .text "text"\
-            .url "url"
-    fi
-    
-    if [[ "$2" = "/nodeinfo/"* ]]; then
-      nodeinfo21
-    fi
-
-    if [[ "$2" = "/users/"* ]]; then
-      uid=${2#*users/}
-      user "$uid"
-    fi
-
-    if [[ "$2" = "/notes/"* ]]; then
-      id=${2#*notes/}
-      httpd_clear
-      httpd_header "Content-Type" "application/activity+json"
-      httpd_json 200\
-        %@context "$(< ./context.json)"\
-        .id "$DOMAINURL/notes/$id"\
-        .type "Note"\
-        .attributedTo "$DOMAINURL/users/shuid"\
-        .content "i love bash"\
-        .published "2024-01-01T00:00:00Z"\
-        @to 1\
-          . "https://www.w3.org/ns/activitystreams#Public"\
-        @cc 1\
-          . "$DOMAINURL/followers/$uid"\
-        %inReplyTo null\
-        @attachment 0\
-        %sensitive false\
-        @tag 0
-    fi
-
-    if [[ "$2" = "/banner/"* ]]; then
-      uid=${2#*banner/}
-
-      echo uid: $uid
-
-      httpd_clear
-      httpd_header "Content-Type" "image/png"
-      httpd_sendfile 200 "$DB_USERS/$uid/banner.png"
-    fi
-
-    if [[ "$2" = "/pfp/"* ]]; then
-      uid=${2#*pfp/}
-
-      httpd_clear
-      httpd_header "Content-Type" "image/png"
-      httpd_sendfile 200 "$DB_USERS/$uid/pfp.png"
-    fi
-
-    if [[ "$2" = "/@"* ]]; then
-      username=${2#*@}
-      echo username: $username
-      uid=$(finduser "$username")
-
-      user "$uid"
-    fi
-  elif [[ "$1" = "POST" ]]; then
-    if [[ "$2" = "/sharedinbox" ]]; then
-      json=$(httpd_read)
-      type=$(jq -r '.type' <<< "$json")
-
-      echo "SHARED INBOX REQUEST TYPE: $type"
-      echo "$json"
-
-      httpd_clear
-      httpd_send 200
-    fi
-
-    if [[ "$2" = "/inbox/"* ]]; then
-      uid=${2#*inbox/}
-
-      json=$(httpd_read)
-      type=$(jq -r '.type' <<< "$json")
-
-      echo "INBOX REQUEST: $uid/$type"
-
-      httpd_clear
-      httpd_send 200
-
-    fi
-  fi
-
-  echo
 }
 
 finduser() {
