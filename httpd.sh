@@ -32,7 +32,7 @@ httpd_handle() {
     local line=${line//$'\r'/}
     local key=${line%: *}
     local value=${line#*: }
-    G_headers[$key]="${value,,}"
+    G_headers[${key,,}]=$value
   done
 
 
@@ -54,6 +54,7 @@ httpd_handle() {
 
   echo "${request[@]}"
   echo "${G_headers[user-agent]}"
+  echo "${G_headers[signature]}"
   echo "--------"
   for key in "${!G_search[@]}"; do
     echo "Search: $key ${G_search[$key]}"
