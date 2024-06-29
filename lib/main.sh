@@ -27,7 +27,10 @@ DOMAINURL=https://$DOMAIN
 
 DB=./db
 DB_USERS=$DB/users
+
+# remote objects and actors
 DB_OBJECTS=$DB/objects
+DB_ACTORS=$DB/actors
 
 start() {
   httpd_init
@@ -123,7 +126,13 @@ req_ap_inbox() {
 actorlookup(){
   actorurl=$1
 
-  http_get_signed "$actorurl"
+  json=$(http_get_signed "$actorurl")
+  ourid=$(uuid)
+
+  mkdir -p "$DB_ACTORS/$ourid"
+
+  echosafe "$json" > "$DB_ACTORS/$ourid/actor.json"
+  echosafe "$actorurl" > "$DB_ACTORS/$ourid/actorurl"
 }
 
 req_user_inbox() {
@@ -233,16 +242,31 @@ req_webfinger() {
   resource=${G_search[resource]}
   echo "Webfinger: $resource"
 
-  account=${resource#*acct:}
 
-  username=${account%@*}
+  if [[ "$resource" = "acct:"* ]]; then
+    account=${resource#*acct:}
 
-  uid=$(finduser "$username")
+    username=${account%@*}
+
+    uid=$(finduser "$username")
+  else
+    # iceshrimp.net resource
+    uid=${resource#*users/}
+  fi
+
+  if ! userlookup "$uid"; then
+    httpd_clear
+    httpd_send 404 "no such user!"
+    return
+  fi
+
+  
+
 
   httpd_clear
   httpd_header "Content-Type" "application/jrd+json"
   httpd_json 200\
-    .subject "acct:$account"\
+    .subject "acct:$setUsername@$DOMAIN"\
     @links 3\
       ! 3\
         .rel self\
@@ -251,7 +275,7 @@ req_webfinger() {
       ! 3\
         .rel "http://webfinger.net/rel/profile-page"\
         .type "text/html"\
-        .href "$DOMAINURL/@$username"\
+        .href "$DOMAINURL/@$setUsername"\
       ! 2\
         .rel "http://ostatus.org/schema/1.0/subscribe"\
         .template "$DOMAINURL/authorize-follow?acct={uri}"

@@ -38,12 +38,30 @@ follow() {
   uid=$1
   actor=$2
 
+  followid=$(uuidgen)
+
   http_post_json_signed "$actor/inbox" "$uid"\
-    %context "$(< ./context.json)"\
-    .id "$DOMAINURL/follows/gyat"\
+    %@context "$(< ./context.json)"\
+    .id "$DOMAINURL/follows/$followid"\
     .type Follow\
     .actor "$DOMAINURL/users/$uid"\
     .object "$actor"
+}
+
+bite() {
+  uid=$1
+  actor=$2
+  note=${3-$2}
+
+  actorlookup "$actor"
+
+  biteid=$(uuidgen)
+  http_post_json_signed "$actor/inbox" "$uid"\
+    %@context "$(< ./context.json)"\
+    .id "$DOMAINURL/bites/$biteid"\
+    .type Bite\
+    .actor "$DOMAINURL/users/$uid"\
+    .target "$note"
 }
 
 

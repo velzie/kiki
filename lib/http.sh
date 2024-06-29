@@ -16,7 +16,10 @@ http_post_signed() {
   fi
 
 
-  . "$DB_USERS/$uid/info"
+  if ! userlookup "$uid"; then
+    dbg "http_post_signed: no such user $uid!"
+    return
+  fi
 
 
   # create b64 digest
@@ -33,11 +36,6 @@ http_post_signed() {
   ) | openssl base64 -A)
 
   header="keyId=\"$DOMAINURL/users/$uid#main-key\",algorithm=\"rsa-sha256\",headers=\"(request-target) host date digest\",signature=\"$signed\""
-
-  echo "Sending to $protocol://$host$pathname"
-  echo "signature: $signed" 
-  echo "header: $header"
-
 
   curl -X POST\
     -H "Content-Type: application/activity+json"\

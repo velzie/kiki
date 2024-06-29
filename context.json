@@ -28,6 +28,7 @@
       "sharkey": "https://joinsharkey.org/ns#",
       "backgroundUrl": "sharkey:backgroundUrl",
       "listenbrainz": "sharkey:listenbrainz",
-      "vcard": "http://www.w3.org/2006/vcard/ns#"
+      "vcard": "http://www.w3.org/2006/vcard/ns#",
+      "Bite": "https://ns.mia.jetzt/as#Bite"
   }
 ]
