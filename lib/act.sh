@@ -65,6 +65,7 @@ act_accept() {
 act_post() {
   uid=$1
   content=$2
+  inreplyto=$3
 
   # first create the note
   noteid=$(uuid)
@@ -72,11 +73,11 @@ act_post() {
   mkdir -p "$DB_OBJECTS/$noteid"
   echo "Note" > "$DB_OBJECTS/$noteid/type"
 
-  json\
+  json=$(json\
     ._misskey_content "$content"\
     .content "<p><span>$content</span></p>"\
     .sensitive false\
-    .published "2016-06-30T15:45:47.926506515Z"\
+    .published "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"\
     !source 2\
       .content "$content"\
       .mediaType "text/x.misskeymarkdown"\
@@ -87,8 +88,14 @@ act_post() {
     .attributedTo "$DOMAINURL/users/$uid"\
     @tag 0\
     .id "$DOMAINURL/notes/$noteid"\
-    .type Note\
-  > "$DB_OBJECTS/$noteid/object.json"
+    .type Note)
+
+
+  if [ -n "$inreplyto" ]; then
+    json=$(jq --arg inreplyto "$inreplyto" '.inReplyTo = $inreplyto' <<< "$json")
+  fi
+  
+  echosafe "$json" > "$DB_OBJECTS/$noteid/object.json"
 
 
   # now add it to the user's outbox

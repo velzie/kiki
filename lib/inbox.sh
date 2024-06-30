@@ -8,6 +8,8 @@ add_object() {
 
   echosafe "$type" > "$DB_OBJECTS/$ourid/type"
   echosafe "$object" > "$DB_OBJECTS/$ourid/object.json"
+
+  echo "$ourid"
 }
 
 
@@ -55,6 +57,8 @@ in_act_follow() {
   local uid
 
 
+  echo "INBOX FOLLOW $json"
+
   followid=$(jq -r '.id' <<< "$json")
   actor=$(jq -r '.actor' <<< "$json")
   object=$(jq -r '.object' <<< "$json")
@@ -76,6 +80,11 @@ in_act_follow() {
   act_accept "$uid" "$actor" "$followid"
 
   echo "$actor" >> "$DB_USERS/$uid/followers"
+
+
+  if [ -n "$FOLLOWBACK" ]; then
+    act_follow "$uid" "$actor"
+  fi
 }
 
 req_user_inbox() {
@@ -124,11 +133,28 @@ req_ap_inbox() {
 inbox() {
 
   if [[ "$type" = "Create" ]]; then
-    add_object "$(jq -r '.object' <<< "$json")"
+    noteid=$(add_object "$(jq -r '.object' <<< "$json")")
+
+    attributedTo=$(jq -r '.object.attributedTo' <<< "$json")
+
+    tags=$(jq -r '.object.tag | map (.href) | join (" ")' <<< "$json")
+    for tag in $tags; do
+      if [[ "$tag" = "$DOMAINURL/users"*  ]]; then
+        uid=${tag#*users/}
+        echo "$uid was tagged!!"
+        ./events.sh tag "$uid" "$noteid" "$attributedTo"
+      fi
+    done
+
   elif [[ "$type" = "Follow" ]]; then
     in_act_follow "$json"
   elif [[ "$type" = "Like" ]]; then
-    :
+    object=$(jq -r '.object' <<< "$json")
+    actor=$(jq -r '.actor' <<< "$json")
+
+    noteid=${object#*notes/}
+    echo "LIKE $noteid"
+    echosafe "$actor" >> "$DB_OBJECTS/$noteid/likes"
   elif [[ "$type" = "Accept" ]]; then
     :
   elif [[ "$type" = "Delete" ]]; then

@@ -7,3 +7,6 @@ INSTANCEACTOR=shuid
 
 MAINTAINERNAME=velzie
 MAINTAINEREMAIL=velzie@velzie.rip
+
+# will help with federation if on but is a bit weird
+FOLLOWBACK=0

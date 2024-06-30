@@ -70,4 +70,10 @@ actorlookup(){
   setOutbox=$(jq -r '.outbox' <<< "$json")
   setUrl=$(jq -r '.url' <<< "$json")
 
+  local url=$setUrl
+  url=${url#*//}
+  setDomain=${url%%/*}
+
+  setAcct=$(jq -r '.preferredUsername' <<< "$json")@$setDomain
+
 }
