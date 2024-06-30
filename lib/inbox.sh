@@ -10,27 +10,39 @@ add_object() {
   echosafe "$object" > "$DB_OBJECTS/$ourid/object.json"
 }
 
+
+notelookup(){
+  local noteid=$1
+
+  if ! [ -d "$DB_OBJECTS/$noteid/" ]; then
+    dbg "notelookup: no such note $noteid!"
+    return 1
+  fi
+
+  setType=$(<"$DB_OBJECTS/$noteid/type")
+  setJson=$(<"$DB_OBJECTS/$noteid/object.json")
+  setOwner=$(jq -r '.attributedTo' <<< "$setJson")
+  setContent=$(jq -r '.content' <<< "$setJson")
+}
+
 req_note(){
   id=${path#*notes/}
+
+  
+  if ! notelookup "$id"; then
+    httpd_clear
+    httpd_send 404 "no such note!"
+    return
+  fi
 
 
   httpd_clear
   httpd_header "Content-Type" "application/activity+json"
-  httpd_json 200\
-    %@context "$(< ./context.json)"\
-    .id "$DOMAINURL/notes/$id"\
-    .type "Note"\
-    .attributedTo "$DOMAINURL/users/shuid"\
-    .content "i love bash"\
-    .published "2024-01-01T00:00:00Z"\
-    @to 1\
-      . "https://www.w3.org/ns/activitystreams#Public"\
-    @cc 1\
-      . "$DOMAINURL/followers/shuid"\
-    %inReplyTo null\
-    @attachment 0\
-    %sensitive false\
-    @tag 0
+  
+  # add context to the note json
+  setJson=$(echosafe "$setJson" | jq '.["@context"] = $context' --argjson context "$(< ./context.json)")
+
+  httpd_send 200 "$setJson"
 }
 
 

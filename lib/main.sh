@@ -36,6 +36,7 @@ do_routes() {
   httpd_route GET /.well-known/nodeinfo req_nodeinfo
   httpd_route GET /.well-known/host-meta req_hostmeta_xml
   httpd_route GET /.well-known/host-meta.json req_hostmeta_json
+  httpd_route GET /instanceicon 'httpd_clear && httpd_sendfile 200 instanceicon.png'
 
   httpd_route GET '/nodeinfo/*' req_disaspora_nodeinfo
   httpd_route GET /manifest.json req_manifest

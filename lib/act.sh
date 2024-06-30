@@ -68,13 +68,28 @@ act_post() {
 
   # first create the note
   noteid=$(uuidgen)
-
+  
   mkdir -p "$DB_OBJECTS/$noteid"
   echo "Note" > "$DB_OBJECTS/$noteid/type"
-  echo "$content" > "$DB_OBJECTS/$noteid/content"
-  echo "$uid" > "$DB_OBJECTS/$noteid/author"
-  echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > "$DB_OBJECTS/$noteid/created"
-  echo "$noteid" > "$DB_OBJECTS/$noteid/id"
+
+  json\
+    ._misskey_content "$content"\
+    .content "<p><span>$content</span></p>"\
+    .sensitive false\
+    .published "$(date -u +'%Y-%m-%dT%H:%M:%S.%NZ')"\
+    !source 2\
+      .content "$content"\
+      .mediaType "text/x.misskeymarkdown"\
+    @to 1\
+      . "$DOMAINURL/followers/$uid"\
+    @cc 1\
+      . "https://www.w3.org/ns/activitystreams#Public"\
+    .attributedTo "$DOMAINURL/users/$uid"\
+    @tag 0\
+    .id "$DOMAINURL/notes/$noteid"\
+    .type Note\
+  > "$DB_OBJECTS/$noteid/object.json"
+
 
   # now add it to the user's outbox
   echo "$noteid" >> "$DB_USERS/$uid/outbox"
@@ -88,11 +103,7 @@ act_post() {
       .id "$DOMAINURL/notes/$noteid"\
       .type Create\
       .actor "$DOMAINURL/users/$uid"\
-      !object 4\
-        .id "$noteid"\
-        .type Note\
-        .content "$content"\
-        .author "$DOMAINURL/users/$uid"
+      %object "$(< "$DB_OBJECTS/$noteid/object.json")"
   done < "$DB_USERS/$uid/followers"
   
 }
