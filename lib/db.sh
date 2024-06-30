@@ -68,7 +68,7 @@ actorlookup(){
   setOurId="$ourid"
   setInbox=$(jq -r '.inbox' <<< "$json")
   setOutbox=$(jq -r '.outbox' <<< "$json")
-  setUrl=$(jq -r '.url' <<< "$json")
+  setUrl=$(jq -r '.id' <<< "$json")
 
   local url=$setUrl
   url=${url#*//}

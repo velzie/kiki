@@ -66,6 +66,7 @@ act_post() {
   uid=$1
   content=$2
   inreplyto=$3
+  to=$4
 
   # first create the note
   noteid=$(uuid)
@@ -81,8 +82,9 @@ act_post() {
     !source 2\
       .content "$content"\
       .mediaType "text/x.misskeymarkdown"\
-    @to 1\
+    @to 2\
       . "$DOMAINURL/followers/$uid"\
+      . "$to"\
     @cc 1\
       . "https://www.w3.org/ns/activitystreams#Public"\
     .attributedTo "$DOMAINURL/users/$uid"\

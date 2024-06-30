@@ -133,7 +133,8 @@ req_ap_inbox() {
 inbox() {
 
   if [[ "$type" = "Create" ]]; then
-    noteid=$(add_object "$(jq -r '.object' <<< "$json")")
+    add_object "$(jq -r '.object' <<< "$json")"
+    noteurl=$(jq -r '.object.id' <<< "$json")
 
     attributedTo=$(jq -r '.object.attributedTo' <<< "$json")
 
@@ -142,7 +143,7 @@ inbox() {
       if [[ "$tag" = "$DOMAINURL/users"*  ]]; then
         uid=${tag#*users/}
         echo "$uid was tagged!!"
-        ./events.sh tag "$uid" "$noteid" "$attributedTo"
+        ./events.sh tag "$uid" "$noteurl" "$attributedTo"
       fi
     done
 
