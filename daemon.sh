@@ -11,4 +11,4 @@ PORT=${PORT:-4206}
 # we want to keep stdout for debugging, so we redirect it to fd 4, and use fd 3 for the response
 # fd 4 of ncat then goes back to stdout so everything works
 
-ncat -k -l -p "$PORT" -c ". ./lib/main.sh; ( start>&4 ) 3>&1" 4>&1
+ncat -k -l -p "$PORT" -c ". ./lib/main.sh; ( do_routes>&4 ) 3>&1" 4>&1

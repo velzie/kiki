@@ -1,5 +1,14 @@
 #shellcheck shell=bash
 
+
+jsonvalid(){
+  jq -e . >/dev/null 2>&1
+}
+
+uuid(){
+  tr -dc 'a-f0-9' < /dev/urandom | head -c 8
+}
+
 echosafe() {
   printf "%s" "$1"
 }
