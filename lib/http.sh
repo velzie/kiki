@@ -37,7 +37,11 @@ http_post_signed() {
 
   header="keyId=\"$DOMAINURL/users/$uid#main-key\",algorithm=\"rsa-sha256\",headers=\"(request-target) host date digest\",signature=\"$signed\""
 
-  curl -X POST\
+
+  echo "Sending to $protocol://$host$pathname"
+
+
+  curl --fail -X POST\
     -H "Content-Type: application/activity+json"\
     -H "User-Agent: kiki.sh/$VERSION $DOMAINURL"\
     -H "Accept: application/activity+json"\
@@ -79,7 +83,7 @@ http_get_signed() {
 
   header="keyId=\"$DOMAINURL/users/$uid#main-key\",algorithm=\"rsa-sha256\",headers=\"(request-target) host date\",signature=\"$signed\""
 
-  curl\
+  curl --fail -sL\
     -H "Content-Type: application/activity+json"\
     -H "User-Agent: kiki.sh/$VERSION $DOMAINURL"\
     -H "accept: application/activity+json"\
@@ -89,6 +93,7 @@ http_get_signed() {
     -H "signature: $header"\
     "$protocol://$host$pathname"
 
+  return 1
 }
 
 verify_signature(){

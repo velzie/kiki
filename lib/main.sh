@@ -10,6 +10,8 @@
 . ./lib/httpd.sh
 . ./lib/http.sh
 
+. ./lib/act.sh
+
 
 DOMAIN=kiki.velzie.rip
 VERSION=2024.0.1
@@ -110,6 +112,8 @@ req_ap_inbox() {
 
   if [[ "$type" = "Create" ]]; then
     add_object "$(jq -r '.object' <<< "$json")"
+  elif [[ "$type" = "Follow" ]]; then
+    in_act_follow "$json"
   elif [[ "$type" = "Delete" ]]; then
     # don't care. spams the logs
     :
@@ -123,16 +127,83 @@ req_ap_inbox() {
   httpd_send 200
 }
 
+jsonvalid(){
+  jq -e . >/dev/null 2>&1
+}
+
 actorlookup(){
-  actorurl=$1
+  local actorurl=$1
+  local actor
+  local json
+  local ourid
 
-  json=$(http_get_signed "$actorurl")
-  ourid=$(uuid)
 
-  mkdir -p "$DB_ACTORS/$ourid"
+  local found=0
 
-  echosafe "$json" > "$DB_ACTORS/$ourid/actor.json"
-  echosafe "$actorurl" > "$DB_ACTORS/$ourid/actorurl"
+  files=$(shopt -s nullglob dotglob; echo $DB_ACTORS/*)
+  if (( ${#files} > 0 )); then
+    for actor in $DB_ACTORS/*; do
+      if [ "$(<"$actor/url" )" = "$actorurl" ]; then
+        ourid=$(basename "$actor")
+        found=1
+        json=$(<"$actor/actor.json")
+      fi
+    done
+  fi
+
+  if [ "$found" = 0 ]; then
+    json=$(http_get_signed "$actorurl")
+    if ! jsonvalid <<<"$json"; then
+      dbg "$json"
+      return 1
+    fi
+
+    ourid=$(uuid)
+
+    mkdir -p "$DB_ACTORS/$ourid"
+
+    echosafe "$json" > "$DB_ACTORS/$ourid/actor.json"
+    echosafe "$actorurl" > "$DB_ACTORS/$ourid/url"
+  fi
+
+
+
+  setOurId="$ourid"
+  setInbox=$(jq -r '.inbox' <<< "$json")
+  setOutbox=$(jq -r '.outbox' <<< "$json")
+  setUrl=$(jq -r '.url' <<< "$json")
+
+}
+
+in_act_follow() {
+  local json=$1
+  local followid
+  local actor
+  local object
+  local uid
+
+
+  followid=$(jq -r '.id' <<< "$json")
+  actor=$(jq -r '.actor' <<< "$json")
+  object=$(jq -r '.object' <<< "$json")
+  # actor is the remote actor, object is our actor
+
+  uid=${object#*users/}
+
+  if ! userlookup "$uid"; then
+    httpd_clear
+    httpd_send 404 "no such user!"
+    return
+  fi
+
+  echo "FOLLOW REQUEST: $actor -> $object"
+  echo "FOLLOW ID: $followid"
+
+  actorlookup "$actor"
+
+  act_accept "$uid" "$actor" "$followid"
+
+  echo "$actor" >> "$DB_USERS/$uid/followers"
 }
 
 req_user_inbox() {
@@ -142,23 +213,7 @@ req_user_inbox() {
   type=$(jq -r '.type' <<< "$json")
 
   if [[ "$type" = "Follow" ]]; then
-    followid=$(jq -r '.id' <<< "$json")
-    actor=$(jq -r '.actor' <<< "$json")
-    object=$(jq -r '.object' <<< "$json")
-    # actor is the remote actor, object is our actor
-
-    uid=${object#*users/}
-
-    if ! userlookup "$uid"; then
-      httpd_clear
-      httpd_send 404 "no such user!"
-      return
-    fi
-
-    echo "FOLLOW REQUEST: $actor -> $object"
-
-    actorlookup "$actor"
-      
+    in_act_follow "$json"
   elif [[ "$type" = "Accept" ]]; then
     :
   else
@@ -454,8 +509,8 @@ outbox() {
 
 finduser() {
   username=$1
-  for file in $DB_USERS/*; do
-    source "$file/info"
+  for actor in $DB_USERS/*; do
+    source "$actor/info"
     if [ "$setUsername" = "$username" ]; then
       echo "$setUid"
       return
