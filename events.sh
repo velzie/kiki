@@ -15,7 +15,5 @@ if [[ $1 == "tag" ]]; then
   actorlookup "$tagger"
     
 
-  ./ctl.sh act post "$uid" "@$setAcct hi!" "$noteid"
-
-  echo ./ctl.sh act post "$uid" "$setAcct hi!" "$noteid" "$setUrl"
+  ./ctl.sh act post "$uid" "@$setAcct :3" "$noteid"
 fi
