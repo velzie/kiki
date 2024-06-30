@@ -88,8 +88,8 @@ senduserinfo() {
 
   actor=$(actorjson "$uid")
 
-  # add ./context.json to actor
-  actor=$(echosafe "$actor" | jq '.["@context"] = $context' --argjson context "$(< ./context.json)")
+  # add json-ld context to actor object
+  actor=$(echosafe "$actor" | jq '.["@context"] = $context' --argjson context "$CONTEXT")
 
   httpd_send 200 "$actor"
 }

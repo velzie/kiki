@@ -40,7 +40,7 @@ req_note(){
   httpd_header "Content-Type" "application/activity+json"
   
   # add context to the note json
-  setJson=$(echosafe "$setJson" | jq '.["@context"] = $context' --argjson context "$(< ./context.json)")
+  setJson=$(echosafe "$setJson" | jq '.["@context"] = $context' --argjson context "$CONTEXT")
 
   httpd_send 200 "$setJson"
 }
@@ -84,18 +84,7 @@ req_user_inbox() {
   json=$(httpd_read)
   type=$(jq -r '.type' <<< "$json")
 
-  if [[ "$type" = "Follow" ]]; then
-    in_act_follow "$json"
-  elif [[ "$type" = "Accept" ]]; then
-    :
-  else
-    echo "UNKNOWN USER ACTIVITY: $type"
-    echo "$json"
-  fi
-
-
-  httpd_clear
-  httpd_send 200
+  inbox
 }
 
 req_user_outbox() {
@@ -114,7 +103,7 @@ req_user_outbox() {
   httpd_clear
   httpd_header "Content-Type" "application/activity+json"
   httpd_json 200\
-    %@context "$(< ./context.json)"\
+    %@context "$CONTEXT"\
     .id "$DOMAINURL/outbox/$uid"\
     .type OrderedCollection\
     %totalItems $numactivities\
@@ -129,10 +118,19 @@ req_ap_inbox() {
   json=$(httpd_read)
   type=$(jq -r '.type' <<< "$json")
 
+  inbox
+}
+
+inbox() {
+
   if [[ "$type" = "Create" ]]; then
     add_object "$(jq -r '.object' <<< "$json")"
   elif [[ "$type" = "Follow" ]]; then
     in_act_follow "$json"
+  elif [[ "$type" = "Like" ]]; then
+    :
+  elif [[ "$type" = "Accept" ]]; then
+    :
   elif [[ "$type" = "Delete" ]]; then
     # don't care. spams the logs
     :

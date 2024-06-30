@@ -52,6 +52,11 @@ httpd_handle() {
     done <<< "$query&"
   fi
 
+  if [[ "${G_headers[user-agent]}" == *"Friendica"* ]]; then
+    # ermmm.. don't want to turn my timeline into an old folks home.. sorry!
+    exit
+  fi
+
   echo "${request[@]}"
   echo "${G_headers[user-agent]}"
   echo "--------"
@@ -116,6 +121,13 @@ httpd_json() {
 httpd_sendfile() {
   status=$1
   file=$2
+
+  if [ ! -f "$file" ]; then
+    dbg "warn: sendfile: file not found: $file"
+    httpd_clear
+    httpd_send 404 "Not Found"
+    return
+  fi
 
   {
     echo -en "HTTP/1.1 $status OK\r\n"

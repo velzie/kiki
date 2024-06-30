@@ -4,7 +4,7 @@ act_follow() {
   uid=$1
   actor=$2
 
-  followid=$(uuidgen)
+  followid=$(uuid)
 
   if ! actorlookup "$actor"; then
     dbg "act_follow: no such actor $actor!"
@@ -13,7 +13,7 @@ act_follow() {
 
 
   http_post_json_signed "$setInbox" "$uid"\
-    %@context "$(< ./context.json)"\
+    %@context "$CONTEXT"\
     .id "$DOMAINURL/follows/wtf"\
     .type Follow\
     .actor "$DOMAINURL/users/$uid"\
@@ -30,9 +30,9 @@ act_bite() {
     return
   fi
 
-  biteid=$(uuidgen)
+  biteid=$(uuid)
   http_post_json_signed "$setInbox" "$uid"\
-    %@context "$(< ./context.json)"\
+    %@context "$CONTEXT"\
     .id "$DOMAINURL/bites/$biteid"\
     .type Bite\
     .actor "$DOMAINURL/users/$uid"\
@@ -50,9 +50,9 @@ act_accept() {
   fi
 
   http_post_json_signed "$setInbox" "$uid"\
-    %@context "$(< ./context.json)"\
+    %@context "$CONTEXT"\
     .type Accept\
-    .id "$DOMAINURL/accepts/$(uuidgen)"\
+    .id "$DOMAINURL/accepts/$(uuid)"\
     .actor "$DOMAINURL/users/$uid"\
     !object 4\
       .id "$followid"\
@@ -67,7 +67,7 @@ act_post() {
   content=$2
 
   # first create the note
-  noteid=$(uuidgen)
+  noteid=$(uuid)
   
   mkdir -p "$DB_OBJECTS/$noteid"
   echo "Note" > "$DB_OBJECTS/$noteid/type"
@@ -76,7 +76,7 @@ act_post() {
     ._misskey_content "$content"\
     .content "<p><span>$content</span></p>"\
     .sensitive false\
-    .published "$(date -u +'%Y-%m-%dT%H:%M:%S.%NZ')"\
+    .published "2016-06-30T15:45:47.926506515Z"\
     !source 2\
       .content "$content"\
       .mediaType "text/x.misskeymarkdown"\
@@ -99,7 +99,7 @@ act_post() {
   while read -r follower; do
     actorlookup "$follower"
     http_post_json_signed "$setInbox" "$uid"\
-      %@context "$(< ./context.json)"\
+      %@context "$CONTEXT"\
       .id "$DOMAINURL/notes/$noteid"\
       .type Create\
       .actor "$DOMAINURL/users/$uid"\

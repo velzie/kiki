@@ -18,8 +18,10 @@
 . ./lib/users.sh
 
 
-
 DOMAINURL=https://$DOMAIN
+
+# json-ld context. the context object has to list every namespace we implement because software like iceshrimp.NET will do full json-ld expansion
+CONTEXT=$(< ./context.json)
 
 
 do_routes() {
